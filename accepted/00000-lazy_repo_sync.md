@@ -55,26 +55,25 @@ For instance, critical assets such as bootstrap process packages will be flagged
 
 **Database changes will include new columns on `rhnpackage` table:**
 
-- downloadStatus (Enun): (N)o Download, (P)ending download, (D)ownloading, (R)eady
+- downloadStatus (Enun): (N)o Download, (P)ending download, (E)rror, (R)eady
 - downloadPriority(int): between 0-9. The higher the number, the higher the priority.
 - downloadRelativePath:(varchar): relative path from where to download the package in the repository download location (remote server will be determined at download time, base on the rhncontentsource table).
 - Retry download error count (int): Number of download failed attempts
 
-The downloading status may not be needed and will depend on the implemention mechanism of the download task.
 
 ## Package asynchronous downloader
 
-A new Taskomatic task will be implemented to process packages awaiting download. This task will iterate through pending entries, prioritized by importance, download them, and store them within the local cache.
+A new Taskomatic task will be implemented to process packages awaiting download. This task will iterate through pending entries, prioritized by importance, download them, and store them within the existing local cache.
+
+This task can be configure to run each few minutes, or run once per day. If the decision goes on run once per day, then some action would need to trigger extra execution, like a CLM promotion with auto-download enable (more on this later in this RFC).
 
 The operational workflow is defined as follows:
 
 - Identify all packages with a (P)ending status, sorted by their assigned priority.
-- Secure a lock on the primary package. If its status remains pending, transition it to (D)ownloading; if it is already being processed, proceed to the subsequent package. Note: This state may be redundant if cross-service downloads are managed via database locks.
+- Secure a lock on the primary package. If its status remains pending after aquiring the download the process will continue; if it is already being processed, proceed to the subsequent package
 - Execute the package download.
 - Upon successful completion, transition the package status to (R)eady.
-- In the event of a failure, revert the status to (P)ending. To prevent infinite loops during persistent download failures, a maximum attempt threshold must be implemented to eventually mark the package as failed.
-
-As a preparatory measure during the Taskomatic job startup, any packages stuck in the (D)ownloading state will be reset to (P)ending. This ensures that packages left in limbo due to an unexpected service termination can be retried. This step is contingent on the utilization of the downloading status.
+- In the event of a failure, if the number of retrieslower then the configure max retries on the system keep the package at the state (P)ending download. If the max number of retries was reached, move the package status to (E)rror.
 
 ### Download package workflow
 
@@ -115,7 +114,7 @@ The package details interface will include a button to request an upstream downl
 
 **CLM Integration**
 
-Each environment within a Content Lifecycle Management (CLM) project will feature an option to specify whether its associated packages should be pre-downloaded. When enabled, all packages in the environment's channels will be flagged for download during the build/promote phases. Taskomatic will then manage the subsequent retrieval of these flagged packages.
+Each Content Lifecycle Management (CLM) project will feature an option to specify whether packages on each it's environments must be pre-downloaded. When enabled, all packages in the project environment's channels will be flagged for download during the build/promote phases. Taskomatic will then manage the subsequent retrieval of these flagged packages.
 
 
 ## On-Demand Download Endpoint
@@ -125,6 +124,13 @@ The system requires a mechanism to retrieve packages from upstream sources when 
 - **Single Retrieval Management:** To ensure efficiency, only a single upstream download session for the same package should be initiated even if multiple concurrent requests are received for the same missing package.
 - **Concurrency and Resource Regulation:** The total number of simultaneous upstream downloads must be throttled to prevent server resource exhaustion or starvation.
 - **Cache Integration:** All successfully retrieved packages must be committed to the local cache. Specific data retention policies for these cached items will be established in subsequent design phases.
+
+All waiting location should be controlled with some limites, to control server starvations. For example:
+
+- Max concurrent downloads
+- Max number of waiting clients
+- Max clients waiting on the same package
+- Max waiting connections per client
 
 ### Proposed Operational Workflow
 
