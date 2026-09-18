@@ -61,6 +61,26 @@ For instance, critical assets such as bootstrap process packages will be flagged
 - Retry download error count (int): Number of download failed attempts
 
 
+### Implementation Approach
+
+The code in the `repo-syn` is complex and filled with bug fixes that occasionally conflict with one another.However, it remains a crucial component of Uyuni and is relatively stable, given that it is likely our most used tool.
+
+To implement the changes proposed in this RFC, we have two options:
+
+1. Modify the current repo-sync implementation
+2. Develop a new repo-sync-ng, designed according to the specifications in this RFC
+
+
+Both approaches carry distinct trade-offs:
+
+- Option 1 (Modify existing code): This would be significantly faster to implement, but we would retain all existing technical debt and maintenance challenges.
+- Option 2 (Develop repo-sync-ng): This allows us to refactor the codebase for better long-term maintainability. However, rewriting the tool risks introducing new bugs or missing subtle edge cases addressed in the legacy code.
+
+Given that repo-sync is a critical tool, a balanced approach would be to build the new implementation alongside the existing one. Initially, only new customers who want to leverage the lazy-repo-sync feature would use repo-sync-ng.
+
+Once the new tool proves stable in production, we can migrate all remaining users to it and safely deprecate the legacy version.
+
+
 ## Package asynchronous downloader
 
 A new Taskomatic task will be implemented to process packages awaiting download. This task will iterate through pending entries, prioritized by importance, download them, and store them within the existing local cache.
